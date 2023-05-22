@@ -1,0 +1,570 @@
+---
+title: "online_emotions_parler_capitol_riot"
+author: "jhnnsjkbk"
+date: "5/22/2023"
+header-includes:
+   - \usepackage{dcolumn}
+   - \usepackage{fixltx2e}
+   - \usepackage{booktabs}
+   - \usepackage{float}
+   - \usepackage{longtable}
+   - \usepackage{multirow}
+   - \usepackage{siunitx}
+   - \floatplacement{figure}{H}
+output:
+  pdf_document:
+    toc: yes
+    keep_tex: yes
+    number_sections: yes
+    fig_caption: yes
+    extra_dependencies: ["float"]
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(warning = FALSE)
+knitr::opts_chunk$set(dev = 'pdf')
+knitr::opts_chunk$set(fig.width = 19, fig.height = 9, dpi = 300)
+```
+
+
+# Load packages
+```{r library, include=FALSE}
+# install.packages("devtools") 
+library(devtools) 
+# devtools::install_github("kbenoit/quanteda.dictionaries") 
+library(quanteda.dictionaries)
+library(quanteda)
+library(png)
+library(texreg)
+library(xtable)
+library(lubridate)
+library(scales)
+library(dplyr)
+library(tidytext)
+library(grid)
+library(wordcloud)
+library(ggthemes)
+library(ggforce)
+library(tidyverse)
+library(data.table)
+
+# setwd(paste0(getwd(), "/code"))
+source("utils.R")
+source("large_data_files.R")
+
+```
+
+
+```{r load data, echo = FALSE}
+load(file = "../data/df_emotions_hashtags_bio_est.Rda")
+
+# New data import for files exceeding Github storage limit
+parleys <- load_parleys_est()
+parler_data_est <- load_parler_data_est()
+
+posts <- parleys %>%
+  select(body, id) %>%
+  unnest_tokens(word, body)
+
+```
+
+
+\pagebreak
+
+# Definition: Event Timeline
+
+```{r, echo = FALSE}
+
+timeline <- tribble(~Time, ~Action, ~Explaination, ~DisplayText,
+                    "2021-01-06 11:00:00", "1", "Protesters head to Capitol building", "2021-01-06 10:30:00",
+                    "2021-01-06 12:00:00", "2", "Speech of Donald Trump", "2021-01-06 11:30:00",
+                    "2021-01-06 14:15:00", "3", "Rioters enter Capitol building", "2021-01-06 14:45:00",
+                    "2021-01-06 16:17:00", "4", "Trump releases a video (“Go home, we love you, you’re very special”) ", "2021-01-06 16:45:00",
+                    "2021-01-06 19:00:00", "5", "Twitter & Facebook remove posts of Pres. Trump, Twitter locks account", "2021-01-06 18:30:00",
+                    "2021-01-06 19:30:00", "6", "Capitol building declared to be secure", "2021-01-06 19:00:00",
+                    "2021-01-06 20:30:00", "7", "Facebook blocks page of Pres. Trump", "2021-01-06 21:00:00",
+                    "2021-01-07 03:30:00", "8", "Congress completes counting of the electoral votes", "2021-01-07 03:00:00",
+                    "2021-01-08 12:00:00", "9", "Parler removed from Google Playstore", "2021-01-08 11:00:00",
+                    "2021-01-09 12:00:00", "10", "Parler removed from Apple's App Store", "2021-01-09 11:00:00",
+                    "2021-01-11 03:00:00", "11", "Parler goes offline", "2021-01-11 02:00:00")
+riot_start <- as.POSIXct(strptime("2021-01-06 11:00:00", format = "%Y-%m-%d %H:%M:%S", tz = "EST"))
+riot_end <- as.POSIXct(strptime("2021-01-06 19:30:00", format = "%Y-%m-%d %H:%M:%S", tz = "EST"))
+time_period <- "2021-01-06"
+
+# EST
+parleys <- parleys %>% mutate(createdAtformatted = createdAtformatted - hours(5))
+
+parleys <- parleys %>%
+  mutate(event = case_when(
+    createdAtformatted < riot_start ~ "Before riot",
+    createdAtformatted >= riot_start & createdAtformatted < riot_end ~ "During riot",
+    createdAtformatted >= riot_end ~ "After riot"
+  )) %>%
+  mutate(event = factor(event, levels = c("Before riot", "During riot", "After riot")))
+
+print(timeline %>% select(Time, Explaination, Action))
+print(xtable(timeline %>%
+               select(Action, Time, Explaination) %>%
+               setNames(., c("Label", "Time", "Event")), caption = sprintf('Considered time line of the US Capitol riots.', time_period), align = c('l', rep('r', 3))), style = 'latex', booktabs = T, comment = F, header = F, table.placement = "H")
+
+```
+
+## Time Series - Change in (%): Basic Emotions
+
+```{r message = F, echo = FALSE, fig.width = 32, fig.height = 18, out.height="100%", out.width="100%"}
+df_emotions <- get_df_emotions()
+selected <- c("anger", "anticipation", "joy", "trust", "disgust", "fear", "sadness", "surprise")
+colors_selected <- as.list(c("#c4271c", "#ef8432", "#cd38d8", "#429329", "#fce86e", "#001dbd", "#388ada", "#89f96d")) %>% setNames(., selected)
+
+output_plots_ts <- selected %>% map(~plot_emotions_ts_change(df = df_emotions %>% filter(hour >= 0), .x, color = colors_selected[.], y_min = -0.04, y_max = 0.065))
+cowplot::plot_grid(plotlist = output_plots_ts, scale = 1, ncol = 4)
+ggsave("figures/time_series_basic_emotions_change.pdf", width = 32, height = 18)
+```
+
+## Time Series - Change in (%): Derived Emotions
+
+```{r message = F, echo = FALSE, fig.width = 40, fig.height = 50, out.height="100%", out.width="100%"}
+
+selected_derived <- c("disapproval", "unbelief", "outrage", "guilt")
+
+output_plots_ts <- selected_derived %>% map(~plot_emotions_ts_change(df = df_emotions %>% filter(hour >= 0), .x, y_min = -0.015, y_max = 0.065))
+cowplot::plot_grid(plotlist = output_plots_ts, scale = 1, ncol = 4)
+ggsave("figures/time_series_derived_emotions_change.pdf", width = 32, height = 9)
+
+```
+
+
+\newpage
+# Analysis: User Groups (by hashtags in Bio)
+
+## Considered hashtags to separate user groups
+```{r, echo = FALSE, eval=TRUE, label="hashtagsbio", results='asis'}
+hashtags <- tribble(~user_group, ~hashtags,
+                    "Trump supporters", "#trump2020",
+                    "Trump supporters", "#trump",
+                    "Trump supporters", "#maga",
+                    "QAnon supporters", "#wwg1wga",
+                    "QAnon supporters", "#qanon",
+                    "QAnon supporters", "#thegreatawakening",
+                    "Alleged election fraud", "#stopthesteal",
+                    "Alleged election fraud", "#voterfraud",
+                    "Alleged election fraud", "#electionfraud",
+) %>% setNames(., c("usergroup", "hashtag"))
+print(xtable(hashtags, caption = sprintf('User group specific hashtags')), style = 'latex', booktabs = T, comment = F, header = F, table.placement = "H")
+
+df_emotions_hashtags_bio$usergroup[df_emotions_hashtags_bio$usergroup == "QAnon"] <- "QAnon supporters"
+df_emotions <- get_df_emotions(time_period = "2 ")
+
+df_emotions_user_groups_by_bio <- df_emotions_hashtags_bio %>%
+  select(userid, usergroup) %>%
+  inner_join(df_emotions, by = "userid") %>%
+  mutate(usergroup = usergroup)
+
+parleys_user_groups_by_bio <- df_emotions_hashtags_bio %>%
+  select(userid, usergroup) %>%
+  inner_join(parleys, by = "userid") %>%
+  mutate(usergroup = usergroup)
+
+df_count_user_groups <- parleys_user_groups_by_bio %>%
+  group_by(usergroup) %>%
+  count() %>%
+  setNames(., c("User group", "Number of parleys"))
+
+df_count_users_per_user_group <- parleys_user_groups_by_bio %>%
+  group_by(usergroup) %>%
+  distinct(creator) %>%
+  count() %>%
+  setNames(., c("User group", "Number of parleys"))
+
+print(xtable(df_count_user_groups, caption = sprintf('Parleys per user group')), style = 'latex', booktabs = T, comment = F, header = F, table.placement = "H")
+
+# Print ratio of users with bio
+print(nrow(parler_data_est %>% select(creator, bio) %>% distinct(creator, bio) %>% filter(bio != "")) / nrow(parler_data_est))
+print(nrow(parler_data_est %>% filter(bio != "")) / nrow(parler_data_est))
+
+# Overlap
+overlap <- parleys_user_groups_by_bio %>% select(creator, usergroup) %>% distinct(creator, usergroup)
+overlap_overall <- 1 - (nrow(parleys_user_groups_by_bio %>% select(creator, usergroup)  %>% distinct(creator)) / nrow(parleys_user_groups_by_bio %>% select(creator, usergroup)  %>% distinct(creator, usergroup)))
+
+# Trump / Alleged fraud
+overlap_trump_alleged <- parleys_user_groups_by_bio %>% select(creator, usergroup) %>% filter(usergroup=="Trump supporters" | usergroup=="Alleged election fraud") %>% distinct(creator, usergroup)
+overlap_trump_alleged_ratio <- 1 - (nrow(parleys_user_groups_by_bio %>% select(creator, usergroup) %>% filter(usergroup=="Trump supporters" | usergroup=="Alleged election fraud") %>% distinct(creator)) / nrow(parleys_user_groups_by_bio %>% select(creator, usergroup)  %>% filter(usergroup=="Trump supporters" | usergroup=="Alleged election fraud") %>% distinct(creator, usergroup)))
+print("Overlap Trump / Alleged:")
+print(overlap_trump_alleged_ratio)
+
+# Trump / QAnon
+overlap_trump_qanon <- parleys_user_groups_by_bio %>% select(creator, usergroup) %>% filter(usergroup=="Trump supporters" | usergroup=="QAnon supporters") %>% distinct(creator, usergroup)
+overlap_trump_qanon_ratio <- 1 - (nrow(parleys_user_groups_by_bio %>% select(creator, usergroup) %>% filter(usergroup=="Trump supporters" | usergroup=="QAnon supporters") %>% distinct(creator)) / nrow(parleys_user_groups_by_bio %>% select(creator, usergroup)  %>% filter(usergroup=="Trump supporters" | usergroup=="QAnon supporters") %>% distinct(creator, usergroup)))
+print("Overlap Trump / QAnon:")
+print(overlap_trump_qanon_ratio)
+
+# Alleged / QAnon
+overlap_alleged_qanon <- parleys_user_groups_by_bio %>% select(creator, usergroup) %>% filter(usergroup=="Alleged election fraud" | usergroup=="QAnon supporters") %>% distinct(creator, usergroup)
+overlap_alleged_qanon_ratio <- 1 - (nrow(parleys_user_groups_by_bio %>% select(creator, usergroup) %>% filter(usergroup=="Alleged election fraud" | usergroup=="QAnon supporters") %>% distinct(creator)) / nrow(parleys_user_groups_by_bio %>% select(creator, usergroup)  %>% filter(usergroup=="Alleged election fraud" | usergroup=="QAnon supporters") %>% distinct(creator, usergroup)))
+print("Overlap Alleged / QAnon:")
+print(overlap_alleged_qanon_ratio)
+
+
+# Remove overlap as additional robustness check:
+overlap_alleged_qanon <- overlap_alleged_qanon %>% 
+  group_by(creator) %>% 
+  mutate(freq=n()) %>% 
+  filter(freq>1)
+
+overlap_trump_qanon <- overlap_trump_qanon %>% 
+  group_by(creator) %>% 
+  mutate(freq=n()) %>% 
+  filter(freq>1)
+
+overlap_trump_alleged <- overlap_trump_alleged %>% 
+  group_by(creator) %>% 
+  mutate(freq=n()) %>% 
+  filter(freq>1)
+
+overlapping_users <- unique(unlist(list(overlap_alleged_qanon$creator, overlap_trump_alleged$creator, overlap_trump_qanon$creator)))
+
+remove_overlap = FALSE
+if (remove_overlap) {
+  #df_emotions_hashtags_bio
+  df_emotions_hashtags_bio <- df_emotions_hashtags_bio[!df_emotions_hashtags_bio$userid %in% overlapping_users, ]
+}
+  
+
+
+```
+
+
+## Heatmap across user groups (selected by bio)
+
+```{r message = F, echo = FALSE, fig.width = 40, fig.height = 50, out.height="100%", out.width="100%"}
+df_emotions <- get_df_emotions("2 ")
+
+df_emotions_network <- df_emotions %>% mutate(usergroup = "Parler network")
+
+df_emotions_user_groups_by_bio <- rbind(df_emotions_user_groups_by_bio, df_emotions_network)
+df_emotions_user_groups_by_bio$usergroup2 <- "Other usergroups"
+
+selected <- c("sentiment")
+output_plots_heatmap <- selected %>% map(~plot_heat_map(df = df_emotions_user_groups_by_bio, .x))
+cowplot::plot_grid(plotlist = output_plots_heatmap, labels = str_to_title(selected), label_size = 60, scale = 1, ncol = 1)
+ggsave("figures/heatmaps_sentiment.pdf", width = 32, height = 9)
+
+selected <- c("disapproval", "unbelief", "outrage", "guilt")
+output_plots_heatmap <- selected %>% map(~plot_heat_map(df = df_emotions_user_groups_by_bio, .x))
+cowplot::plot_grid(plotlist = output_plots_heatmap, labels = str_to_title(selected), label_size = 60, scale = 1, ncol = 2)
+ggsave("figures/heatmaps_derived_emotions.pdf", width = 32, height = 18)
+
+```
+
+
+
+
+## Twitter sentiment
+```{r message = F, echo = FALSE, fig.width = 32, fig.height = 18, out.height="100%", out.width="100%"}
+load("../data/tweet_emotions.Rda")
+
+# EST
+tweets <- tweets %>% mutate(date = as.POSIXct(strptime(date, format = "%Y-%m-%d %H:%M:%S", tz = "EST")))
+tweets <- tweets %>% mutate(date = date - hours(5)) 
+
+tweets <- tweets %>%
+  filter(date >= "2021-01-06 05:00:00" & date < "2021-01-07 06:00:00") %>% # UTC => EST
+  mutate(event = case_when(
+    date < riot_start ~ "Before riot",
+    date >= riot_start & date < riot_end ~ "During riot",
+    date >= riot_end ~ "After riot"
+  )) %>%
+  mutate(event = factor(event, levels = c("Before riot", "During riot", "After riot")))
+
+
+df_tweets <- tweets %>%
+    filter(!is.na(emotions_pos)) %>%
+    mutate(datetime_hour = format(ceiling_date(strptime(date, "%Y-%m-%d %H:%M:%S"), unit = paste0("1hours")), format = "%H:%M"),
+           hour = hour(date)) %>%
+    mutate(createdAtformatted = date)
+ 
+df_emotions <- get_df_emotions()   
+
+selected = "sentiment"
+selected = "unbelief"
+selected = "guilt"
+selected = "disapproval"
+selected = "outrage"
+
+if(length(selected) == 1){
+df_plot_tweet_ts <- df_tweets %>%
+    group_by(datetime_hour) %>%
+    summarize(Twitter = mean(get(selected)), datetime = min(createdAtformatted))
+df_plot_parleys_ts <- df_emotions %>%
+    group_by(datetime_hour) %>%
+    summarize(Parler = mean(get(selected)), datetime = min(createdAtformatted)) 
+
+print(paste("Twitter vs. Parler: ", selected))
+print(t.test(df_plot_tweet_ts$Twitter, df_plot_parleys_ts$Parler, alternative = "two.sided", var.equal = FALSE))
+print(ks.test(df_plot_tweet_ts$Twitter, df_plot_parleys_ts$Parler, alternative = "two.sided"))
+}
+plot_emotions_ts_tweet_vs_parley <- function(df_tweets, df_emotions, selected, color = NaN, y_min = 0.05, y_max = 0.4, legend_position = "none") {
+   df_test_twitter<- df_tweets %>%
+    mutate(emo_selected = round(df_tweets %>% pull(`selected`), 5)) %>%
+    arrange(emo_selected) %>%
+    mutate(y = emo_selected) %>%
+    ungroup()
+  df_test_parler <- df_emotions %>%
+    mutate(emo_selected = round(df_emotions %>% pull(`selected`), 5)) %>%
+    arrange(emo_selected) %>%
+    mutate(y = emo_selected) %>%
+    ungroup()
+
+
+  #ks - test
+  test_1 <- ks.test(df_test_parler$y, df_test_twitter$y)
+  if(format(round(test_1$p.value, digits = 3), nsmall = 3) == "0.000"){
+  plot_stat_1 <- paste0("KS-test 1: D=", format(round(test_1$statistic, 3), nsmall = 3), ", p<0.001")
+  }
+  else{
+  plot_stat_1 <- paste0("KS-test 1: D=", format(round(test_1$statistic, 3), nsmall = 3), ", p=",
+                          format(round(test_1$p.value, digits = 3), nsmall = 3))
+  }
+ 
+  print(plot_stat_1)
+
+  df_plot_tweet_ts <- df_tweets %>%
+    group_by(datetime_hour) %>%
+    summarize(Twitter = mean(get(selected)), datetime = min(createdAtformatted)) #%>%
+    #mutate(emotion_ave = emotion_ave / 100)
+
+  df_plot_parleys_ts <- df_emotions %>%
+    group_by(datetime_hour) %>%
+    summarize(Parler = mean(get(selected)), datetime = min(createdAtformatted)) #%>%
+    #mutate(emotion_ave = emotion_ave / 100)
+
+  df_plot_ts <- cbind(df_plot_parleys_ts,df_plot_tweet_ts) %>% select(c(1,2,3,5)) %>% gather("Platform", "value", -datetime_hour, -datetime)
+
+    
+  plot_ts <- df_plot_ts %>% ggplot(aes(x = as.POSIXct(strptime(datetime, format = "%Y-%m-%d %H:%M:%S", tz = "UTC")), y = value, colour = Platform)) + geom_line(size=2)
+
+  plot_ts <- plot_ts + scale_color_manual(values=c("#992B56", "#1DA1F2"))
+  
+  plot_ts <- plot_ts +
+    geom_vline(data = timeline %>%  slice(c(1,3,7)), aes(xintercept = as.POSIXct(strptime(Time, format = "%Y-%m-%d %H:%M:%S", tz = "UTC"))), linetype = "dashed", size = 1) 
+     if(!selected == "sentiment"){
+      plot_ts <- plot_ts + geom_label(data = timeline %>%  slice(c(1,3,7)), aes(x = as.POSIXct(strptime(Time, format = "%Y-%m-%d %H:%M:%S", tz = "UTC")), label = Action, y = 0.3), vjust = "outward", size = 35 / .pt, colour = "white", fill = "black")}
+  else{
+      plot_ts <- plot_ts + geom_label(data = timeline %>%  slice(c(1,3,7)), aes(x = as.POSIXct(strptime(Time, format = "%Y-%m-%d %H:%M:%S", tz = "UTC")), label = Action, y = 0.4), vjust = "outward", size = 35 / .pt, colour = "white", fill = "black")
+  }
+   
+    plot_ts <- plot_ts + scale_x_datetime(breaks = "6 hours",
+                     labels = date_format("%H:%M")) +
+    #scale_x_datetime(breaks = "1 day",
+    #                 labels = date_format("%Y-%m-%d")) +
+    scale_y_continuous(
+      expand = c(0, 0),
+      limits = c(y_min, y_max),
+    ) +
+    theme(plot.margin = unit(c(3, 3, 3, 3), "lines"),
+          axis.text.x = element_text(size = 120 / .pt, angle = 45, hjust = 1, vjust = 1),
+          axis.text.y = element_text(size = 120 / .pt),
+          axis.title.y = element_text(size = 120 / .pt),
+          legend.position = legend_position,
+          plot.title = element_text(vjust = 3, face = "bold", size = 140 / .pt)) +
+    coord_cartesian(clip = "off") +
+    labs(y = str_to_title(selected), x = NULL) +
+    ggtitle(str_to_title(selected))
+
+    img_twitter <- readPNG(paste0(getwd(), "/figures/Twitter_bird_logo_2012.png"))
+    img_parler <- readPNG(paste0(getwd(), "/figures/parler_logo.png"))
+    
+    img_twitter <- rasterGrob(img_twitter, interpolate=TRUE)
+    img_parler <- rasterGrob(img_parler, interpolate=TRUE)
+    
+    twitter_logo_loc <- tail(df_plot_tweet_ts, 1)$Twitter
+    parler_logo_loc <- tail(df_plot_parleys_ts, 1)$Parler
+    
+    if(abs(twitter_logo_loc - parler_logo_loc) < 0.05){
+      if(twitter_logo_loc > parler_logo_loc){
+          parler_logo_loc <- parler_logo_loc - 0.08
+      }
+      if(twitter_logo_loc < parler_logo_loc){
+          twitter_logo_loc <- twitter_logo_loc - 0.06
+      }
+
+    }
+
+    plot_ts <- plot_ts +
+      annotation_custom(img_twitter, xmin=as.POSIXct(strptime("2021-01-06 21:30:00", format = "%Y-%m-%d %H:%M:%S", tz = "UTC")), xmax=as.POSIXct(strptime("2021-01-06 23:30:00", format = "%Y-%m-%d %H:%M:%S", tz = "UTC")), ymin=twitter_logo_loc + 0.02, ymax=twitter_logo_loc + 0.05) +
+      annotation_custom(img_parler, xmin=as.POSIXct(strptime("2021-01-06 21:30:00", format = "%Y-%m-%d %H:%M:%S", tz = "UTC")), xmax=as.POSIXct(strptime("2021-01-06 23:30:00", format = "%Y-%m-%d %H:%M:%S", tz = "UTC")), ymin=parler_logo_loc + 0.02, ymax=parler_logo_loc + 0.05) +
+      geom_point()
+    
+    plot_ts <- plot_ts + ggtitle(str_to_title(selected))
+        if(!selected == "sentiment"){
+            plot_ts <- plot_ts + annotate(geom = "text", x = as.POSIXct(strptime("2021-01-06 12:00:00", format = "%Y-%m-%d %H:%M:%S", tz = "UTC")), y = 0.11, label = plot_stat_1, parse = F, size = 9.5)
+        }
+        else{
+            plot_ts <- plot_ts + annotate(geom = "text", x = as.POSIXct(strptime("2021-01-06 04:30:00", format = "%Y-%m-%d %H:%M:%S", tz = "UTC")), y = 0.1, label = plot_stat_1, parse = F, size = 11)}
+  plot_ts
+}
+
+selected <- "sentiment"
+
+output_plots_ts <- selected %>% map(~plot_emotions_ts_tweet_vs_parley(df_emotions = df_emotions %>% filter(hour >= 0), df_tweets =  df_tweets %>% filter(hour >= 0), .x, color = colors_selected[.], y_min = 0.05, y_max = 0.4))
+legend <- cowplot::get_legend(
+  output_plots_ts[[1]] +
+    guides(color = guide_legend(nrow = 1)) +
+    theme(legend.position = "bottom", legend.text = element_text(size = 40))
+)
+prow <- cowplot::plot_grid(plotlist = output_plots_ts, scale = 1, ncol = length(selected))
+cowplot::plot_grid(prow, legend, ncol = 1, rel_heights = c(1, .1))
+
+ggsave("figures/time_series_tweet_sentiment.pdf", width = 16, height = 9, scale = 1) 
+
+
+selected <- c("disapproval", "unbelief", "outrage", "guilt")
+
+output_plots_ts <- selected %>% map(~plot_emotions_ts_tweet_vs_parley(df_emotions = df_emotions %>% filter(hour >= 0), df_tweets =  df_tweets %>% filter(hour >= 0), .x, color = colors_selected[.], y_min = 0.1, y_max = 0.3))
+legend <- cowplot::get_legend(
+  output_plots_ts[[1]] +
+    guides(color = guide_legend(nrow = 1)) +
+    theme(legend.position = "bottom", legend.text = element_text(size = 60))
+)
+prow <- cowplot::plot_grid(plotlist = output_plots_ts, scale = 1, ncol = length(selected))
+cowplot::plot_grid(prow, legend, ncol = 1, rel_heights = c(1, .1))
+
+ggsave("figures/time_series_tweet_derived.pdf", width = 32, height = 9, scale = 1)
+
+
+``` 
+
+
+```{r message = F, echo = FALSE, fig.width = 32, fig.height = 18, out.height="100%", out.width="100%"}
+# Deep dive
+
+riot_related_tweets <- subset(df_tweets, grepl("speech|riot|rally|Capitol|POTUS|America|god bless|civil war", df_tweets$text))      
+non_riot_related_tweets <- subset(df_tweets, !grepl("speech|riot|rally|Capitol|POTUS|America|god bless|civil war", df_tweets$text))
+
+plot_emotions_ts_tweet_deepdive <- function(df_related, df_non_related, selected, y_min=0, y_max=0.25, color = NaN, legend_position = "none") {
+    
+   df_test_related <- df_related %>%
+    mutate(emo_selected = round(df_related %>% pull(`selected`), 5)) %>%
+    arrange(emo_selected) %>%
+    mutate(y = emo_selected) %>%
+    ungroup()
+  df_test_non_related  <- df_non_related %>%
+    mutate(emo_selected = round(df_non_related %>% pull(`selected`), 5)) %>% 
+    arrange(emo_selected) %>%
+    mutate(y = emo_selected) %>%
+    ungroup()
+ 
+  
+  #ks - test
+  test_1 <- ks.test(df_test_related$y, df_test_non_related$y)
+    if(format(round(test_1$p.value, digits = 3), nsmall = 3) == "0.000"){
+  plot_stat_1 <- paste0("KS-test 1: D=", format(round(test_1$statistic, 3), nsmall = 3), ", p<0.001")
+  }
+  else{
+  plot_stat_1 <- paste0("KS-test 1: D=", format(round(test_1$statistic, 3), nsmall = 3), ", p=",
+                          format(round(test_1$p.value, digits = 3), nsmall = 3))
+  }
+  
+  print(plot_stat_1)
+
+  df_plot_tweet_ts <- df_related %>%
+      group_by(datetime_hour) %>%
+      summarize(Related = mean(get(selected)), datetime = min(createdAtformatted)) %>%
+      rename("Related Tweets" = Related)
+
+  df_plot_parleys_ts <- df_non_related %>%
+      group_by(datetime_hour) %>%
+      summarize(NonRelated = mean(get(selected)), datetime = min(createdAtformatted)) %>%
+      rename("Non-related Tweets" = NonRelated)
+  
+
+  df_plot_ts <- cbind(df_plot_parleys_ts,df_plot_tweet_ts) %>% 
+                select(c(1,2,3,5)) %>% 
+                gather("Relation", "value", -datetime_hour, -datetime)
+    
+  plot_ts <- df_plot_ts %>% ggplot(aes(x = as.POSIXct(strptime(datetime, format = "%Y-%m-%d %H:%M:%S", tz = "UTC")), y = value, colour = Relation)) +
+    geom_line(aes(linetype=Relation), size=1) +
+    scale_color_manual(values=c("#1DA1F2", "blue")) + 
+    scale_linetype_manual(values=c("dotted", "solid")) + 
+    geom_vline(data = timeline %>%  slice(c(1,3,7)), aes(xintercept = as.POSIXct(strptime(Time, format = "%Y-%m-%d %H:%M:%S", tz = "UTC"))), linetype = "dashed", size = 1)
+  
+  if(selected == "sentiment"){
+    plot_ts <- plot_ts +
+    geom_label(data = timeline %>%  slice(c(1,3,7)), aes(x = as.POSIXct(strptime(Time, format = "%Y-%m-%d %H:%M:%S", tz = "UTC")), label = Action, y = 0.4), vjust = "outward", size = 25 / .pt, colour = "white", fill = "black")
+  }
+  else{
+    plot_ts <- plot_ts +
+    geom_label(data = timeline %>%  slice(c(1,3,7)), aes(x = as.POSIXct(strptime(Time, format = "%Y-%m-%d %H:%M:%S", tz = "UTC")), label = Action, y = 0.35), vjust = "outward", size = 25 / .pt, colour = "white", fill = "black")
+    } 
+  
+    plot_ts <- plot_ts +
+    scale_x_datetime(breaks = "6 hours",
+                     labels = date_format("%H:%M")) +
+    scale_y_continuous(
+      expand = c(0, 0),
+      limits = c(y_min, y_max),
+    ) +
+    theme(plot.margin = unit(c(3, 3, 3, 3), "lines"),
+          axis.text.x = element_text(size = 75 / .pt, angle = 45, hjust = 1, vjust = 1),
+          axis.text.y = element_text(size = 75 / .pt),
+          axis.title.y = element_text(size = 90 / .pt),
+          legend.position = legend_position,
+          plot.title = element_text(vjust = 3, face = "bold", size = 120 / .pt)) +
+    coord_cartesian(clip = "off") +
+    labs(y = str_to_title(selected), x = NULL) +
+    ggtitle(str_to_title(selected))
+    plot_ts <- plot_ts
+        if(!selected == "sentiment"){
+            plot_ts <- plot_ts + annotate(geom = "text", x = as.POSIXct(strptime("2021-01-06 10:30:00", format = "%Y-%m-%d %H:%M:%S", tz = "UTC")), y = 0.12, label = plot_stat_1, parse = F, size = 9)
+        }
+        else{
+            plot_ts <- plot_ts + annotate(geom = "text", x = as.POSIXct(strptime("2021-01-06 04:30:00", format = "%Y-%m-%d %H:%M:%S", tz = "UTC")), y = -0.05, label = plot_stat_1, parse = F, size = 9)}
+  plot_ts
+}
+
+selected <- "sentiment"
+output_plots_ts <- selected %>% map(~plot_emotions_ts_tweet_deepdive(df_non_related = non_riot_related_tweets %>% filter(hour >= 0), df_related =  riot_related_tweets %>% filter(hour >= 0), .x, color = colors_selected[.], y_min = -.1, y_max = 0.4))
+legend <- cowplot::get_legend(
+  output_plots_ts[[1]] +
+    guides(color = guide_legend(nrow = 1)) +
+    theme(legend.position = "bottom", legend.text = element_text(size = 32))
+)
+prow <- cowplot::plot_grid(plotlist = output_plots_ts, scale = 1, ncol = length(selected))
+cowplot::plot_grid(prow, legend, ncol = 1, rel_heights = c(1, .1))
+
+ggsave("figures/time_series_tweet_deepdive_1.pdf", width = 16, height = 9, scale = 1)
+
+
+```
+
+\newpage
+# Sentiment over time (Dec. 30th, 2020 to Jan. 10th 2021)
+```{r message = F, echo = FALSE, fig.width = 32, fig.height = 18, out.height="100%", out.width="100%"}
+nrc_emotions <- load_robustness_check_emotions()
+
+parleys <- nrc_emotions %>% arrange(createdAtformatted)
+
+parleys <- parleys %>% mutate(createdAtformatted = createdAtformatted - hours(5))
+
+parleys <- parleys %>%
+  mutate(event = case_when(
+    createdAtformatted < riot_start ~ "Before riot",
+    createdAtformatted >= riot_start & createdAtformatted < riot_end ~ "During riot",
+    createdAtformatted >= riot_end ~ "After riot"
+  )) %>%
+  mutate(event = factor(event, levels = c("Before riot", "During riot", "After riot")))
+
+df_emotions <- parleys %>%
+  filter(!is.na(emotions_pos)) %>%
+  mutate(datetime_hour = format(floor_date(strptime(createdAtformatted, "%Y-%m-%d %H:%M:%S"), unit = "1 hours"), format = "%Y-%m-%d %H:%M"),
+         hour = hour(createdAtformatted))
+
+selected <- c("anger", "anticipation", "joy", "trust", "disgust", "fear", "sadness", "surprise")
+selected <- c("disapproval", "love")
+selected <- c("sentiment")
+
+selected %>% map(~plot_emotions_ts(df = df_emotions, .x, y_min = 0.05, y_max = 0.4))
+ggsave("figures/robustness_checks_sentiment.pdf", width = 16, height = 9, scale = 1)
+
+
+```
