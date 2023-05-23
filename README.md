@@ -13,22 +13,21 @@ In the following, we provide several figures that visualize our contributions.
 
 ## Timeline of the events 
 
-![Timeline of key events during the storming of the U.S. Capitol.](https://github.com/jhnnsjkbk/EmotionDynamics/tree/main/figures/Timeline.png)
-
+![Timeline of key events during the storming of the U.S. Capitol.](/figures/Timeline.png)
 
 
 ## Sentiment on Parler over time 
 
-![Sentiment (hourly) in Parler network between De- cember 30, 2020 and January 9, 2021.](https://github.com/jhnnsjkbk/EmotionDynamics/tree/main/figures/Sentiment_Parler.png)
+![Sentiment (hourly) in Parler network between De- cember 30, 2020 and January 9, 2021.](/figures/Sentiment_Parler.png)
 
 
 ## Sentiment on Parler compared to Twitter before, during, and after the storming of the U.S. Capitol 
 
-![Emotion dynamics (hourly) of sentiment on Parler and Twitter on January 6, 2021.](https://github.com/jhnnsjkbk/EmotionDynamics/tree/main/figures/Sentiment_Parler_Twitter.png)
+![Emotion dynamics (hourly) of sentiment on Parler and Twitter on January 6, 2021.](/figures/Sentiment_Parler_Twitter.png)
 
 ## Emotion dynamics for different user groups 
 
-![Emotion dynamics (hourly) of (a) sentiment and (b) derived emotions for different user groups.](https://github.com/jhnnsjkbk/EmotionDynamics/tree/main/figures/User_groups.png)
+![Emotion dynamics (hourly) of (a) sentiment and (b) derived emotions for different user groups.](/figures/User_groups.png)
 
 
 
